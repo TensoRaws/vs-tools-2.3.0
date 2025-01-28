@@ -33,9 +33,8 @@ from vapoursynth import (
     EnvironmentPolicy, EnvironmentPolicyAPI, Error, FieldBased, FilterMode, FrameProps, FramePtr, Func, FuncData,
     Function, LogHandle, MatrixCoefficients, MediaType, MessageType, Plugin, RawFrame, RawNode, SampleType,
     TransferCharacteristics, VideoFormat, VideoFrame, VideoNode, VideoOutputTuple, __api_version__, __version__,
-    _CoreProxy, ccfDisableAutoLoading, ccfDisableLibraryUnloading, ccfEnableGraphInspection, clear_output,
-    clear_outputs, fmFrameState, fmParallel, fmParallelRequests, fmUnordered, get_current_environment, get_output,
-    get_outputs, has_policy, register_on_destroy, register_policy, unregister_on_destroy
+    _CoreProxy, clear_output, clear_outputs, get_current_environment, get_output, get_outputs, has_policy,
+    register_on_destroy, register_policy, unregister_on_destroy
 )
 
 from ..exceptions import CustomRuntimeError
@@ -108,12 +107,13 @@ __all__ = [
     'YUV444P13', 'YUV444P14', 'YUV444P15', 'YUV444P16', 'YUV444P17', 'YUV444P18', 'YUV444P19', 'YUV444P20', 'YUV444P21',
     'YUV444P22', 'YUV444P23', 'YUV444P24', 'YUV444P25', 'YUV444P26', 'YUV444P27', 'YUV444P28', 'YUV444P29', 'YUV444P30',
     'YUV444P31', 'YUV444P32', 'YUV444P8', 'YUV444P9', 'YUV444PH', 'YUV444PS', '_CoreProxy', '__all__',
-    '__api_version__', '__version__', 'ccfDisableAutoLoading', 'ccfDisableLibraryUnloading',
-    'ccfEnableGraphInspection', 'clear_output', 'clear_outputs', 'construct_parameter', 'construct_signature',
-    'construct_type', 'core', 'fmFrameState', 'fmParallel', 'fmParallelRequests', 'fmUnordered',
-    'get_current_environment', 'get_output', 'get_outputs', 'has_policy', 'pyx_capi', 'register_on_creation',
-    'register_on_destroy', 'register_policy', 'try_enable_introspection', 'unregister_on_creation',
-    'unregister_on_destroy', 'vs_file', 'clear_cache'
+    '__api_version__', '__version__', 'CoreCreationFlags', 'ENABLE_GRAPH_INSPECTION', 'DISABLE_AUTO_LOADING',
+    'DISABLE_LIBRARY_UNLOADING', 'ccfDisableAutoLoading', 'ccfDisableLibraryUnloading', 'ccfEnableGraphInspection',
+    'clear_output', 'clear_outputs', 'construct_parameter', 'construct_signature', 'construct_type', 'core',
+    'FilterMode', 'PARALLEL', 'PARALLEL_REQUESTS', 'UNORDERED', 'FRAME_STATE', 'fmFrameState', 'fmParallel',
+    'fmParallelRequests', 'fmUnordered', 'get_current_environment', 'get_output', 'get_outputs', 'has_policy',
+    'pyx_capi', 'register_on_creation', 'register_on_destroy', 'register_policy', 'try_enable_introspection',
+    'unregister_on_creation', 'unregister_on_destroy', 'vs_file', 'clear_cache'
 ]
 
 
@@ -134,7 +134,9 @@ if not TYPE_CHECKING:
 
         cope = (Path.cwd() / first_stack.filename).resolve()
 
-        sys.modules['__vapoursynth__'].__file__ = str(cope)
+        first_stack = None
+
+        sys.modules['__vapoursynth__'].__file__ = __main__.__file__ = str(cope)
 
         sys.path.append(str(cope.parent))
 
@@ -144,6 +146,7 @@ if not TYPE_CHECKING:
 
 def register_on_creation(callback: Callable[..., None], strict: bool = False) -> None:
     """Register a callback on every core creation."""
+
     core_on_creation_callbacks.update({id(callback): weakref.ref(callback)})
 
     if not strict and core.active:
@@ -155,6 +158,7 @@ def register_on_creation(callback: Callable[..., None], strict: bool = False) ->
 
 def unregister_on_creation(callback: Callable[..., None]) -> None:
     """Unregister this callback from every core creation."""
+
     core_on_creation_callbacks.pop(id(callback), None)
 
 
@@ -198,11 +202,11 @@ class FunctionProxy(FunctionProxyBase):
 
     def __getattr__(self, name: str) -> Function:
         if name == '__isabstractmethod__':
-            return False  # type: ignore
+            return False
 
         function = proxy_utils.get_vs_function(self)
 
-        return getattr(function, name)  # type: ignore
+        return getattr(function, name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return proxy_utils.get_vs_function(self)(*args, **kwargs)
@@ -225,7 +229,7 @@ class PluginProxy(PluginProxyBase):
         if name in dir(plugin):
             return FunctionProxy(self, name)
 
-        return getattr(plugin, name)  # type: ignore
+        return getattr(plugin, name)
 
 
 class CoreProxy(CoreProxyBase):
@@ -242,7 +246,7 @@ class CoreProxy(CoreProxyBase):
         if name in dir(core):
             return PluginProxy(self, name)
 
-        return getattr(core, name)  # type: ignore
+        return getattr(core, name)
 
 
 class proxy_utils:
@@ -267,7 +271,7 @@ class proxy_utils:
         core, namespace = proxy_utils.get_core(plugin)
         vs_core = proxy_utils.get_vs_core(core)
 
-        return getattr(getattr(vs_core, namespace), func_name)  # type: ignore
+        return getattr(getattr(vs_core, namespace), func_name)
 
     @staticmethod
     def get_plugin(func: FunctionProxy) -> tuple[PluginProxy, str]:
@@ -276,9 +280,6 @@ class proxy_utils:
     @staticmethod
     def get_core(plugin: PluginProxy) -> tuple[CoreProxy, str]:
         return plugin.__dict__['plugin_ref']  # type: ignore
-
-
-builtins_isinstance = builtins.isinstance
 
 
 def vstools_isinstance(
@@ -296,7 +297,9 @@ def vstools_isinstance(
     return builtins_isinstance(__obj, __class_or_tuple)
 
 
-builtins.isinstance = vstools_isinstance
+if builtins.isinstance is not vstools_isinstance:
+    builtins_isinstance = builtins.isinstance
+    builtins.isinstance = vstools_isinstance
 
 
 def _get_core(self: VSCoreProxy) -> Core | None:
@@ -414,14 +417,14 @@ def _find_ref(start_data: Any, to_return: type | tuple[type, ...], it: int = 3) 
 
 class EnvironmentProxy(EnvironmentProxyBase):
     def __getattr__(self, name: str) -> Plugin:
-        return getattr(get_current_environment(), name)  # type: ignore
+        return getattr(get_current_environment(), name)
 
     def __setattr__(self, name: str, value: Any) -> None:
         return setattr(get_current_environment(), name, value)
 
     @property
     def data(self) -> None:
-        data = self.env()  # type: ignore
+        data = self.env()
         assert data
         return data  # type: ignore
 
@@ -429,13 +432,13 @@ class EnvironmentProxy(EnvironmentProxyBase):
     def policy(self) -> EnvironmentPolicy:
         policy = _find_ref(self.data, (EnvironmentPolicy, VSScriptEnvironmentPolicy, StandaloneEnvironmentPolicy))
         assert policy is not None
-        return policy  # type: ignore
+        return policy
 
     @property
     def api(self) -> EnvironmentPolicyAPI:
         api = _find_ref(self.policy, EnvironmentPolicyAPI)
         assert api is not None
-        return api  # type: ignore
+        return api
 
     @property
     def has_core(self) -> bool:
@@ -462,7 +465,7 @@ class VSCoreProxy(CoreProxyBase):
         object.__setattr__(self, '_core', core and weakref.ref(core))
 
     def __getattr__(self, name: str) -> Plugin:
-        return getattr(_get_core_with_cb(self), name)  # type: ignore
+        return getattr(_get_core_with_cb(self), name)
 
     def __setattr__(self, name: str, value: Any) -> None:
         return setattr(_get_core_with_cb(self), name, value)
@@ -488,6 +491,7 @@ class VSCoreProxy(CoreProxyBase):
     @property
     def core(self) -> Core:
         """The underlying VapourSynth Core instance."""
+
         return _get_core_with_cb(self)
 
     @property
@@ -560,7 +564,7 @@ class VSCoreProxy(CoreProxyBase):
         """
 
         try:
-            from psutil import Process
+            from psutil import Process  # type: ignore
         except ModuleNotFoundError as e:
             from ..exceptions import DependencyNotFoundError
 
@@ -703,3 +707,32 @@ else:
     from vapoursynth import _FastManager
     from vapoursynth import _try_enable_introspection as try_enable_introspection
     from vapoursynth import construct_signature
+
+
+if not TYPE_CHECKING:
+    try:
+        from vapoursynth import (
+            ccfDisableAutoLoading, ccfDisableLibraryUnloading, ccfEnableGraphInspection, fmFrameState, fmParallel,
+            fmParallelRequests, fmUnordered
+        )
+
+        PARALLEL = fmParallel
+        PARALLEL_REQUESTS = fmParallelRequests
+        UNORDERED = fmUnordered
+        FRAME_STATE = fmFrameState
+        ENABLE_GRAPH_INSPECTION = ccfEnableGraphInspection
+        DISABLE_AUTO_LOADING = ccfDisableAutoLoading
+        DISABLE_LIBRARY_UNLOADING = ccfDisableLibraryUnloading
+    except ImportError:
+        from vapoursynth import (
+            DISABLE_AUTO_LOADING, DISABLE_LIBRARY_UNLOADING, ENABLE_GRAPH_INSPECTION, FRAME_STATE, PARALLEL,
+            PARALLEL_REQUESTS, UNORDERED
+        )
+
+        fmParallel = PARALLEL
+        fmParallelRequests = PARALLEL_REQUESTS
+        fmUnordered = UNORDERED
+        fmFrameState = FRAME_STATE
+        ccfEnableGraphInspection = ENABLE_GRAPH_INSPECTION
+        ccfDisableAutoLoading = DISABLE_AUTO_LOADING
+        ccfDisableLibraryUnloading = DISABLE_LIBRARY_UNLOADING
